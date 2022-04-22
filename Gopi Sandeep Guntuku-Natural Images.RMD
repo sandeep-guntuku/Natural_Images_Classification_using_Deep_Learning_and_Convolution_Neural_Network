@@ -1,0 +1,283 @@
+---
+title: "Natural Images Classification using Deep Learning and Convolution Neural Network"
+author: "Gopi Sandeep Guntuku"
+date: "4/12/2022"
+output: html_document
+---
+
+### **Introduction **
+
+Deep learning is a great approach to deal with unstructured data such as text, sound, video and image. There are a lot of implementations of deep learning in image classification and image detection, such as classifying image of dog or cats, detecting different objects in an image or do facial recognition.
+
+```{r }
+knitr::include_graphics("https://cis-8392-assignment-3.s3.amazonaws.com/intro_image.gif")
+```
+
+On this article, we will try to build a simple image classification that will classify whether the presented image is an airplane, car, cat, dog, flower, fruit, motorbike or a person.
+
+
+### **Natural Images **
+
+This dataset contains 6,899 images from 8 distinct classes compiled from various sources. The classes include airplane, car, cat, dog, flower, fruit, motorbike and person. The dataset is available at Kaggle.
+
+The link to the dataset is https://www.kaggle.com/datasets/prasunroy/natural-images?datasetId=42780&language=null
+
+
+### **Screenshot**
+##### **Screenshot showing code section of dataset filtered by language R:**
+
+I have created an S3 storage bucket in AWS Cloud and hosted my screenshot image in the bucket along with giving public access to the object so that everyone with the url can have access to view the image.
+
+
+```{r }
+url <- "https://cis-8392-assignment-3.s3.amazonaws.com/Screenshot+of+the+Code+section+of+the+Kaggle+dataset+filtered+with+R.PNG"
+knitr::include_url(url)
+```
+
+### **Code**
+##### **Loading the libraries required in the project:**
+
+
+```{r }
+library(keras)
+library(tensorflow)
+library(tidyverse)
+library(imager)
+library(caret)
+library(grid)
+library(gridExtra)
+```
+
+
+### **Exploratory Data Analysis**
+
+Let's explore the data first before building the model. In image classification problem, it is a common practice to put each image on separate folders based on the target class/labels. For example, inside the train folder in our data, you can that we have 7 different folders, respectively for `airplane`, `car`, `cat`, `dog`,
+`flower`, `fruit`, `motorbike`, `person`.
+
+## The below operations are being performed here:
+* To get the list of folders we have in our directory that are related to training    data <br/> 
+* File Name <br/>
+* Randomly select image <br/>
+
+  
+```{r message=FALSE, echo=FALSE}
+folder_list <- list.files("natural_images_small/train/")
+
+folder_list
+folder_path <- paste0("natural_images_small/train/", folder_list, "/")
+file_name <- map(folder_path, 
+                 function(x) paste0(x, list.files(x))) %>% 
+  unlist()
+sample_image <- sample(file_name, 12)
+
+# Load image into R
+img <- map(sample_image, load.image)
+# Plot image
+par(mfrow = c(3, 4)) # Create 2 x 3 image grid
+map(img, plot)
+```
+
+
+## To get the list of folders we have in our directory that are related to training data
+
+```{r }
+
+folder_list <- list.files("natural_images_small/train/")
+folder_list
+
+folder_path <- paste0("natural_images_small/train/", folder_list, "/")
+folder_path
+```
+## For File Name
+
+```{r }
+file_name <- map(folder_path, function(x) paste0(x, list.files(x))
+) %>%  unlist()
+
+```
+
+## Showing the file names and number of total training images
+
+
+```{r }
+head(file_name)
+tail(file_name)
+length(file_name)
+
+```
+
+## Check Image Dimension
+
+One of important aspects of image classification is understand the dimension of the input images. You need to know the distribution of the image dimension to create a proper input dimension for building the deep learning model. Let's check the properties of the first image.
+
+```{r}
+# Full Image Description
+img <- load.image(file_name[1])
+img
+```
+
+You can get the information about the dimension of the image. The height and width represent the height and width of the image in pixels. The color channel represent if the color is in grayscale format (color channels = 1) or is in RGB format (color channels = 3). To get the value of each dimension, we can use the `dim()` function. It will return the height, width, depth, and the channels.
+
+```{r}
+# Image Dimension
+dim(img)
+```
+
+So we have successfully inserted an image and got the image dimensions. On the following code, we will create a function that will instantly get the height and width of an image.
+
+```{r}
+# Function for acquiring width and height of an image
+get_dim <- function(x){
+  img <- load.image(x) 
+  
+  df_img <- data.frame(height = height(img),
+                       width = width(img),
+                       filename = x
+                       )
+  
+  return(df_img)
+}
+get_dim(file_name[1])
+```
+
+Now we will sampling 1,000 images from the file name and get the height and width of the image. We use sampling here because it will take a quite long time to load all images.
+
+```{r}
+# Randomly get 1000 sample images
+set.seed(123)
+sample_file <- sample(file_name, 1000)
+# Run the get_dim() function for each image
+file_dim <- map_df(sample_file, get_dim)
+head(file_dim, 10)
+```
+
+Now let's get the statistics for the image dimensions.
+
+```{r}
+summary(file_dim)
+```
+
+The image data has a great variation in the dimension. Some images have less than 55 pixels in height and width while others have up to 2737 pixels. Understanding the dimension of the image will help us on the next part of the process: data preprocessing.
+
+
+## **Rescaling the pixel values and normalizing**
+
+The images are rescaled and normalized the pixel values to range from 0 to 1.
+
+In this way, the numbers will be small and the computation becomes easier and faster.
+
+As the pixel values range from 0 to 256, apart from 0 the range is 255. So dividing all the values by 255 will convert it to range from 0 to 1.
+
+
+```{r }
+train_datagen <- image_data_generator(rescale = 1/255)
+validation_datagen <- image_data_generator(rescale = 1/255)
+test_datagen <- image_data_generator(rescale = 1/255)
+```
+
+
+
+## **Data Preprocessing**
+
+Data preprocessing for image is pretty simple and can be done in a single step in the following section.
+
+
+Since we have a good of training set, we don't need to build artificial data using method called `Data Augmentation`. 
+
+Data augmentation is one useful technique in building models that can increase the size of the training set without acquiring new images. But, here we are not using Data Augmentation as we have enough data for building and training the deep learning convnet model.
+
+Here we are reading the images and converting them to tensors while rescaling the pixel values to [0,1] interval.
+
+## Creating Train Generator
+
+Now we can insert our image data into the generator using the `flow_images_from_directory()`. The data is located inside the `natural_images_small` folder and inside the `train` folder, so the directory will be `natural_images_small/train`. From this process, we will get the image and we can do this on both training data and the validation data.
+
+
+```{r }
+train_generator <- flow_images_from_directory(
+  "natural_images_small/train", # Target directory
+  train_datagen, # Training data generator
+  target_size = c(150, 150), # Resizes all images to 150 × 150
+  batch_size = 20, # 20 samples in one batch
+  class_mode = "categorical" # Because we use categorical_crossentropy loss,
+  # we need categorical labels.
+)
+```
+
+## Creating Validation Generator
+
+```{r }
+validation_generator <- flow_images_from_directory(
+  "natural_images_small/validation",
+  validation_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "categorical"
+)
+```
+
+## Creating Test Generator
+
+```{r }
+test_generator <- flow_images_from_directory(
+  "natural_images_small/train",
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "categorical"
+)
+```
+
+
+## **Model Architecture**
+
+Convnet model has been built for the deep learning classification.
+
+
+- Convolutional layer to extract features from 2D image with `relu` activation function
+- Max Pooling layer to downsample the image features
+- Flattening layer to flatten data from 2D array to 1D array
+- Dense layer to capture more information
+- Dense layer for output with `softmax` activation function
+
+
+Model is built already in R script and saved so that it can be loaded again.
+
+
+## Now we are loading the saved model in R Markdown
+
+## **Model Fitting**
+
+```{r }
+model_file = "natural_images_model.h5"
+history_file = "natural_images_fit_history.rds"
+model_v2 <- load_model_hdf5(model_file)
+history_v2 <- read_rds(history_file)
+```
+
+## Visualising and Evaluating the test data
+
+Plotting the loss and accuracy for training and validation data.
+
+```{r }
+#Plotting the accuracy and loss for training and validation data
+
+plot(history_v2)
+
+#Evaluating the model on test data
+
+model_v2 %>%
+  evaluate_generator(test_generator, steps = 50)
+```
+
+The accuracy on the test data on the model is around 98%.
+
+### **Conclusion:**
+
+**1. I have built the convnet model for predicting 8 classes from the natural images dataset. **
+
+**2. From the visulaization of loss and accuracy with regards to epoch , I observed that accurary of the model will improve with more epochs .**
+
+**3. I could observe over fitting issue based on the loss and epoch variation, and by using data augmentation technique we can overcome the overfitting. **
+
+**4. With around 30 epochs, the model gave an accuracy of around 98% on the testing data. **
